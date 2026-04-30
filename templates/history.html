@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}리스팅 이력{% endblock %}
+{% block subtitle %}CSV 다운로드 이력을 관리합니다. 실수로 리스팅한 경우 취소할 수 있습니다{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2>다운로드 이력</h2>
+        <button class="btn btn-sm btn-secondary" onclick="loadHistory()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+            </svg>
+            새로고침
+        </button>
+    </div>
+
+    <div id="history-list">
+        <div class="empty-state">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+            </svg>
+            <p>아직 리스팅 이력이 없습니다</p>
+        </div>
+    </div>
+</div>
+
+<!-- Detail Modal -->
+<div class="modal-overlay" id="detail-modal" style="display:none" onclick="closeModal(event)">
+    <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3>리스팅 상세</h3>
+            <button class="btn-close" onclick="document.getElementById('detail-modal').style.display='none'">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body" id="detail-content"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', loadHistory);
+</script>
+{% endblock %}

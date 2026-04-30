@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}대시보드{% endblock %}
+{% block subtitle %}전체 리스팅 현황과 사업자별 진행률을 확인합니다{% endblock %}
+
+{% block content %}
+<!-- Overall Stats -->
+<div class="stats-row" id="overall-stats">
+    <div class="stat-card">
+        <div class="stat-label">전체 SKU</div>
+        <div class="stat-value" id="stat-total">-</div>
+    </div>
+    <div class="stat-card stat-success">
+        <div class="stat-label">리스팅 완료</div>
+        <div class="stat-value" id="stat-listed">-</div>
+    </div>
+    <div class="stat-card stat-info">
+        <div class="stat-label">남은 SKU</div>
+        <div class="stat-value" id="stat-remaining">-</div>
+    </div>
+    <div class="stat-card stat-accent">
+        <div class="stat-label">진행률</div>
+        <div class="stat-value" id="stat-percent">-</div>
+    </div>
+</div>
+
+<!-- Overall Progress Bar -->
+<div class="card">
+    <div class="card-header">
+        <h2>전체 진행률</h2>
+    </div>
+    <div class="overall-progress">
+        <div class="progress-bar-large">
+            <div class="progress-fill-large" id="overall-progress-fill" style="width:0%"></div>
+        </div>
+        <div class="progress-label" id="overall-progress-label">0%</div>
+    </div>
+</div>
+
+<!-- Supplier Progress -->
+<div class="card">
+    <div class="card-header">
+        <h2>사업자별 진행률</h2>
+    </div>
+    <div class="supplier-progress-list" id="supplier-progress-list">
+        <div class="empty-state"><p>데이터 로딩 중...</p></div>
+    </div>
+</div>
+
+<!-- Monthly Chart -->
+<div class="card">
+    <div class="card-header">
+        <h2>월별 리스팅 추이</h2>
+    </div>
+    <div class="chart-container">
+        <canvas id="monthly-chart"></canvas>
+    </div>
+</div>
+
+<!-- Recent Activity -->
+<div class="card">
+    <div class="card-header">
+        <h2>최근 활동</h2>
+    </div>
+    <div class="activity-list" id="activity-list">
+        <div class="empty-state"><p>활동 내역이 없습니다</p></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', loadDashboard);
+</script>
+{% endblock %}
