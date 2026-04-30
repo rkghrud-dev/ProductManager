@@ -144,13 +144,23 @@ async function loadSuppliers() {
         grid.innerHTML = suppliers.map(s => {
             const isCompleted = s.available_skus === 0;
             const isSelected = selectedSuppliers.has(s.supplier_code);
+            const percent = s.total_skus > 0 ? ((s.listed_skus / s.total_skus) * 100) : 0;
+            const percentStr = percent.toFixed(1);
+            const waveSvg = `<svg viewBox="0 0 120 16" preserveAspectRatio="none"><path d="M0,8 C10,4 20,12 30,8 C40,4 50,12 60,8 C70,4 80,12 90,8 C100,4 110,12 120,8 L120,16 L0,16 Z"/></svg>`;
             return `
                 <div class="supplier-item ${isSelected ? 'selected' : ''} ${isCompleted ? 'completed' : ''}"
-                     onclick="toggleSupplier('${s.supplier_code}', this)"
+                     onclick="handleSupplierClick(event, '${s.supplier_code}', this)"
                      data-supplier="${s.supplier_code}">
+                    <div class="water-fill" style="height:${percent}%">
+                        <div class="wave">${waveSvg}</div>
+                        <div class="water-fill-inner"></div>
+                    </div>
                     <div class="supplier-checkbox"></div>
                     <div class="supplier-info">
-                        <div class="supplier-name">${s.supplier_code}</div>
+                        <div class="supplier-name">
+                            ${s.supplier_code}
+                            <span class="supplier-percent">${percentStr}%</span>
+                        </div>
                         <div class="supplier-count">
                             <span class="available">${s.available_skus}건 남음</span>
                             / 전체 ${s.total_skus} (완료 ${s.listed_skus})
@@ -163,6 +173,22 @@ async function loadSuppliers() {
     } catch (e) {
         grid.innerHTML = '<div class="empty-state"><p>데이터를 불러올 수 없습니다</p></div>';
     }
+}
+
+function handleSupplierClick(event, code, el) {
+    const rect = el.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    const ripple = document.createElement('div');
+    ripple.className = 'water-ripple';
+    ripple.style.left = (x - 30) + 'px';
+    ripple.style.top = (y - 30) + 'px';
+    ripple.style.width = '60px';
+    ripple.style.height = '60px';
+    el.appendChild(ripple);
+    setTimeout(() => ripple.remove(), 600);
+
+    toggleSupplier(code, el);
 }
 
 function toggleSupplier(code, el) {
