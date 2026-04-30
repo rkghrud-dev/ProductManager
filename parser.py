@@ -40,6 +40,7 @@ def parse_excel(file_path):
     result = {
         'products': [],
         'naver_duplicates': [],
+        'naver_listed_codes': [],
         'headers': [],
         'sheet_info': {}
     }
@@ -111,6 +112,28 @@ def parse_excel(file_path):
             'naver_product_id': row_dict.get('네이버상품번호', ''),
             'raw_data': row_dict
         })
+
+    for name in wb.sheetnames:
+        if '이미' in name and '올린' in name:
+            listed_sheet = wb[name]
+            listed_headers = []
+            first_listed = next(listed_sheet.iter_rows(min_row=1, max_row=1, values_only=True))
+            for val in first_listed:
+                listed_headers.append(str(val) if val else '')
+
+            gs_idx = None
+            for i, h in enumerate(listed_headers):
+                if '자체' in h and '상품' in h:
+                    gs_idx = i
+                    break
+
+            if gs_idx is not None:
+                for row in listed_sheet.iter_rows(min_row=2, values_only=True):
+                    if row and gs_idx < len(row) and row[gs_idx]:
+                        result['naver_listed_codes'].append(str(row[gs_idx]).strip())
+
+            result['sheet_info']['naver_listed'] = name
+            break
 
     for name in wb.sheetnames:
         if '중복' in name:

@@ -86,11 +86,12 @@ def init_db():
     conn.close()
 
 
-def upsert_products(products, headers, naver_dup_codes):
+def upsert_products(products, headers, naver_dup_codes, naver_listed_codes=None):
     conn = get_db()
     new_count = 0
     updated_count = 0
     skipped_count = 0
+    listed_count = 0
 
     if headers:
         conn.execute(
@@ -111,6 +112,8 @@ def upsert_products(products, headers, naver_dup_codes):
         else:
             naver_dup_groups.add(code)
 
+    naver_listed_set = set(naver_listed_codes or [])
+
     for p in products:
         existing = conn.execute(
             "SELECT product_code, is_listed FROM products WHERE product_code = ?",
@@ -118,9 +121,10 @@ def upsert_products(products, headers, naver_dup_codes):
         ).fetchone()
 
         is_naver_dup = 1 if p['sku_group'] in naver_dup_groups else 0
+        is_already_listed = 1 if p['product_code'] in naver_listed_set else 0
 
         if existing:
-            if existing['is_listed']:
+            if existing['is_listed'] and not is_already_listed:
                 skipped_count += 1
                 continue
             conn.execute('''
@@ -129,6 +133,9 @@ def upsert_products(products, headers, naver_dup_codes):
                     sku_group=?, product_name=?, price=?, image_url=?,
                     display_status=?, sale_status=?, naver_status=?,
                     naver_product_id=?, is_naver_duplicate=?, raw_data=?,
+                    is_listed=CASE WHEN is_listed=1 THEN 1 ELSE ? END,
+                    listed_date=CASE WHEN is_listed=1 THEN listed_date
+                        WHEN ?=1 THEN datetime('now','localtime') ELSE NULL END,
                     updated_at=datetime('now','localtime')
                 WHERE product_code=?
             ''', (
@@ -137,30 +144,36 @@ def upsert_products(products, headers, naver_dup_codes):
                 p['price'], p['image_url'], p['display_status'],
                 p['sale_status'], p['naver_status'], p['naver_product_id'],
                 is_naver_dup, json.dumps(p['raw_data'], ensure_ascii=False),
+                is_already_listed, is_already_listed,
                 p['product_code']
             ))
             updated_count += 1
+            if is_already_listed:
+                listed_count += 1
         else:
             conn.execute('''
                 INSERT INTO products (
                     product_code, cafe24_code, supplier_code, product_seq,
                     option_code, sku_group, product_name, price, image_url,
                     display_status, sale_status, naver_status, naver_product_id,
-                    is_naver_duplicate, raw_data
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    is_naver_duplicate, is_listed, listed_date, raw_data
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ''', (
                 p['product_code'], p['cafe24_code'], p['supplier_code'],
                 p['product_seq'], p['option_code'], p['sku_group'],
                 p['product_name'], p['price'], p['image_url'],
                 p['display_status'], p['sale_status'], p['naver_status'],
-                p['naver_product_id'], is_naver_dup,
+                p['naver_product_id'], is_naver_dup, is_already_listed,
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S') if is_already_listed else None,
                 json.dumps(p['raw_data'], ensure_ascii=False)
             ))
             new_count += 1
+            if is_already_listed:
+                listed_count += 1
 
     conn.commit()
     conn.close()
-    return new_count, updated_count, skipped_count
+    return new_count, updated_count, skipped_count, listed_count
 
 
 def get_suppliers():

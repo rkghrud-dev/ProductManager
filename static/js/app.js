@@ -101,6 +101,7 @@ async function uploadFile(file) {
         document.getElementById('result-new').textContent = formatNumber(data.new);
         document.getElementById('result-updated').textContent = formatNumber(data.updated);
         document.getElementById('result-skipped').textContent = formatNumber(data.skipped);
+        document.getElementById('result-naver-listed').textContent = formatNumber(data.naver_listed || 0);
         document.getElementById('result-naver-dup').textContent = formatNumber(data.naver_duplicates);
         result.style.display = 'block';
 

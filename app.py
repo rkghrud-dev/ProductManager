@@ -57,9 +57,10 @@ def upload_excel():
         products = parsed['products']
         headers = parsed['headers']
         naver_dups = parsed['naver_duplicates']
+        naver_listed = parsed.get('naver_listed_codes', [])
 
-        new_count, updated_count, skipped_count = upsert_products(
-            products, headers, naver_dups
+        new_count, updated_count, skipped_count, listed_count = upsert_products(
+            products, headers, naver_dups, naver_listed
         )
 
         save_upload_history(
@@ -73,6 +74,7 @@ def upload_excel():
             'new': new_count,
             'updated': updated_count,
             'skipped': skipped_count,
+            'naver_listed': listed_count,
             'naver_duplicates': len(naver_dups),
             'sheet_info': parsed['sheet_info']
         })
