@@ -1,9 +1,69 @@
 import sqlite3
 import json
 import os
+import re
 from datetime import datetime
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'products.db')
+
+
+def _option_sort_key(product):
+    option_code = (product.get('option_code') or '').upper()
+    product_code = product.get('product_code') or ''
+    if option_code:
+        return (0, option_code, product_code)
+    return (1, product_code)
+
+
+def _pick_base_option(products):
+    sorted_products = sorted(products, key=_option_sort_key)
+    for product in sorted_products:
+        if (product.get('option_code') or '').upper().startswith('A'):
+            return product
+    return sorted_products[0]
+
+
+def _option_label(product):
+    option_code = product.get('option_code') or product.get('product_code') or ''
+    product_code = product.get('product_code') or ''
+    product_name = product.get('product_name') or ''
+
+    if product_code and product_code in product_name:
+        label = product_name.split(product_code, 1)[1].strip()
+    else:
+        label = product_name.strip()
+    label = re.sub(r'^[\s\-_/,:]+', '', label)
+    label = re.sub(r'\s+', ' ', label)
+
+    if not label:
+        return option_code
+    if option_code and label.upper().startswith(option_code.upper()):
+        return label
+    return f'{option_code} {label}'.strip()
+
+
+def _build_option_input(products):
+    labels = [_option_label(product) for product in sorted(products, key=_option_sort_key)]
+    return f"옵션{{{'|'.join(labels)}}}"
+
+
+def _build_group_export_row(products):
+    if len(products) == 1:
+        return json.loads(products[0]['raw_data'])
+
+    base_product = _pick_base_option(products)
+    raw_data = json.loads(base_product['raw_data'])
+
+    raw_data['자체 상품코드'] = base_product['product_code']
+    raw_data['GS상품코드'] = base_product['product_code']
+    raw_data['옵션사용'] = 'Y'
+    raw_data['품목 구성방식'] = 'T'
+    raw_data['옵션 표시방식'] = 'C'
+    raw_data['옵션세트명'] = ''
+    raw_data['옵션입력'] = _build_option_input(products)
+    raw_data['필수여부'] = 'F'
+
+    return raw_data
 
 
 def get_db():
@@ -343,12 +403,24 @@ def get_products_raw_data(sku_groups):
     conn = get_db()
     placeholders = ','.join(['?'] * len(sku_groups))
     rows = conn.execute(f'''
-        SELECT raw_data FROM products
+        SELECT product_code, option_code, sku_group, product_name, raw_data
+        FROM products
         WHERE sku_group IN ({placeholders})
         ORDER BY sku_group, option_code
     ''', sku_groups).fetchall()
     conn.close()
-    return [json.loads(r['raw_data']) for r in rows]
+
+    grouped = {}
+    for row in rows:
+        grouped.setdefault(row['sku_group'], []).append(dict(row))
+
+    export_rows = []
+    for sku_group in sku_groups:
+        products = grouped.get(sku_group, [])
+        if products:
+            export_rows.append(_build_group_export_row(products))
+
+    return export_rows
 
 
 def get_dashboard_data():
