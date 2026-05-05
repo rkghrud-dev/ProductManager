@@ -410,15 +410,15 @@ def get_products_raw_data(sku_groups):
     ''', sku_groups).fetchall()
     conn.close()
 
-    grouped = {}
+    grouped = {sku_group: [] for sku_group in sku_groups}
     for row in rows:
         grouped.setdefault(row['sku_group'], []).append(dict(row))
 
     export_rows = []
     for sku_group in sku_groups:
         products = grouped.get(sku_group, [])
-        if products:
-            export_rows.append(_build_group_export_row(products))
+        for product in sorted(products, key=_option_sort_key):
+            export_rows.append(json.loads(product['raw_data']))
 
     return export_rows
 
