@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}결과 데이터{% endblock %}
+{% block subtitle %}업로드한 후처리 결과를 날짜별로 확인하고 수정 후 다시 다운로드합니다{% endblock %}
+
+{% block content %}
+<div class="card result-browser">
+    <div class="card-header">
+        <h2>업로드 결과 선택</h2>
+        <button class="btn btn-sm btn-secondary" onclick="loadResultUploadOptions()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+            </svg>
+            새로고침
+        </button>
+    </div>
+    <div class="result-picker">
+        <select id="result-upload-select" onchange="loadSelectedResultUpload()">
+            <option value="">업로드 결과를 선택하세요</option>
+        </select>
+        <div class="result-picker-meta" id="result-picker-meta">업로드된 결과 파일이 없습니다</div>
+    </div>
+</div>
+
+<div class="card" id="result-editor-card" style="display:none">
+    <div class="card-header result-editor-header">
+        <div>
+            <h2 id="result-editor-title">결과 데이터</h2>
+            <div class="result-editor-subtitle" id="result-editor-subtitle"></div>
+        </div>
+        <div class="header-actions">
+            <button class="btn btn-sm btn-secondary" onclick="reloadCurrentResultUpload()">업로드 원본 복원</button>
+            <button class="btn btn-sm btn-primary" id="btn-save-result" onclick="saveCurrentResultUpload()" disabled>수정 저장</button>
+            <button class="btn btn-sm btn-success" onclick="downloadCurrentResultUpload()">재다운로드</button>
+        </div>
+    </div>
+    <div class="result-editor-toolbar">
+        <span class="badge badge-secondary" id="result-row-count">0행</span>
+        <span class="badge badge-info" id="result-col-count">0열</span>
+        <span class="badge badge-warning" id="result-dirty-badge" style="display:none">수정됨</span>
+        <details class="column-picker" id="result-column-picker">
+            <summary class="btn btn-sm btn-secondary">칼럼 선택</summary>
+            <div class="column-picker-panel">
+                <div class="column-picker-actions">
+                    <button class="btn btn-sm btn-ghost" type="button" onclick="setAllResultColumns(true)">전체 선택</button>
+                </div>
+                <input type="text" class="column-search" placeholder="칼럼 검색" oninput="filterResultColumnOptions(this.value)">
+                <div class="column-picker-list" id="result-column-list"></div>
+            </div>
+        </details>
+    </div>
+    <div class="editable-table-wrap">
+        <table class="preview-table editable-result-table" id="editable-result-table"></table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', loadResultUploadOptions);
+</script>
+{% endblock %}

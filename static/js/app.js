@@ -26,6 +26,16 @@ function sortLabel(key) {
     return { latest: '최신순', oldest: '오래된순', random: '랜덤' }[key] || key;
 }
 
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    }[ch]));
+}
+
 async function api(url, options = {}) {
     try {
         const res = await fetch(url, options);
@@ -352,6 +362,8 @@ async function downloadCSV() {
 }
 
 /* ===== History ===== */
+let currentDetailBatchId = null;
+
 async function loadHistory() {
     const container = document.getElementById('history-list');
     if (!container) return;
@@ -373,21 +385,24 @@ async function loadHistory() {
 
         container.innerHTML = history.map(h => {
             const suppliers = JSON.parse(h.suppliers || '[]').join(', ');
+            const uploadCount = Number(h.result_upload_count || 0);
             return `
                 <div class="history-item ${h.is_cancelled ? 'cancelled' : ''}">
                     <div class="history-date">${formatDate(h.batch_date)}</div>
                     <div class="history-info">
-                        <div class="history-suppliers">${suppliers}</div>
+                        <div class="history-suppliers">${escapeHtml(suppliers)}</div>
                         <div class="history-meta">
                             <span>${sortLabel(h.sort_order)}</span>
                             <span>${h.count_per_supplier === 99999 ? '전체' : h.count_per_supplier + '개씩'}</span>
                             <span>${h.total_skus} SKU</span>
                             <span>${h.total_rows}행</span>
+                            ${uploadCount ? `<span style="color:var(--success)">업로드 ${uploadCount}개</span>` : ''}
                             ${h.is_cancelled ? '<span style="color:var(--danger)">취소됨</span>' : ''}
                         </div>
                     </div>
                     <div class="history-actions">
                         <button class="btn btn-sm btn-ghost" onclick="showDetail(${h.id})">상세</button>
+                        <button class="btn btn-sm btn-success" data-upload-batch="${h.id}" onclick="openResultUpload(${h.id})">업로드</button>
                         ${!h.is_cancelled ? `
                             <button class="btn btn-sm btn-secondary" onclick="redownload(${h.id})">재다운로드</button>
                             <button class="btn btn-sm btn-danger" onclick="cancelListing(${h.id})">취소</button>
@@ -411,6 +426,8 @@ async function showDetail(batchId) {
         const data = await api(`/api/history/${batchId}`);
         const h = data.history;
         const products = data.products;
+        const resultUploads = data.result_uploads || [];
+        currentDetailBatchId = batchId;
 
         const skuMap = {};
         products.forEach(p => {
@@ -419,40 +436,176 @@ async function showDetail(batchId) {
         });
 
         content.innerHTML = `
-            <div style="margin-bottom:16px">
+            <div class="detail-summary">
                 <p><strong>날짜:</strong> ${formatDate(h.batch_date)}</p>
-                <p><strong>사업자:</strong> ${JSON.parse(h.suppliers || '[]').join(', ')}</p>
+                <p><strong>사업자:</strong> ${escapeHtml(JSON.parse(h.suppliers || '[]').join(', '))}</p>
                 <p><strong>정렬:</strong> ${sortLabel(h.sort_order)} / ${h.count_per_supplier === 99999 ? '전체' : h.count_per_supplier + '개씩'}</p>
-                <p><strong>파일:</strong> ${h.file_name}</p>
+                <p><strong>파일:</strong> ${escapeHtml(h.file_name)}</p>
             </div>
-            <table class="preview-table">
-                <thead>
-                    <tr>
-                        <th>SKU 그룹</th>
-                        <th>사업자</th>
-                        <th>상품명</th>
-                        <th>옵션</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${Object.values(skuMap).map(group => `
-                        <tr>
-                            <td style="font-weight:600">${group[0].sku_group}</td>
-                            <td><span class="badge badge-accent">${group[0].supplier_code}</span></td>
-                            <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${group[0].product_name}</td>
-                            <td>
-                                <div class="option-tags">
-                                    ${group.map(p => `<span class="option-tag">${p.option_code || 'A'}</span>`).join('')}
-                                </div>
-                            </td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
+            <div class="detail-section">
+                <div class="detail-section-header">
+                    <h4>다운로드 상품</h4>
+                    <span class="badge badge-secondary">${Object.keys(skuMap).length} SKU</span>
+                </div>
+                <div class="result-table-wrap">
+                    <table class="preview-table">
+                        <thead>
+                            <tr>
+                                <th>SKU 그룹</th>
+                                <th>사업자</th>
+                                <th>상품명</th>
+                                <th>옵션</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${Object.values(skuMap).map(group => `
+                                <tr>
+                                    <td style="font-weight:600">${escapeHtml(group[0].sku_group)}</td>
+                                    <td><span class="badge badge-accent">${escapeHtml(group[0].supplier_code)}</span></td>
+                                    <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(group[0].product_name)}</td>
+                                    <td>
+                                        <div class="option-tags">
+                                            ${group.map(p => `<span class="option-tag">${escapeHtml(p.option_code || 'A')}</span>`).join('')}
+                                        </div>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="detail-section">
+                <div class="detail-section-header">
+                    <h4>업로드 결과</h4>
+                    <button class="btn btn-sm btn-success" data-upload-batch="${batchId}" onclick="openResultUpload(${batchId})">업로드</button>
+                </div>
+                ${renderResultUploads(resultUploads)}
+            </div>
         `;
 
     } catch (e) {
         content.innerHTML = '<p>상세 정보를 불러올 수 없습니다</p>';
+    }
+}
+
+function renderResultUploads(uploads) {
+    if (!uploads.length) {
+        return '<div class="empty-state empty-state-sm"><p>업로드된 결과 파일이 없습니다</p></div>';
+    }
+
+    return `
+        <div class="result-upload-list">
+            ${uploads.map(upload => `
+                <div class="result-upload-panel">
+                    <div class="result-upload-header">
+                        <div class="result-upload-file">${escapeHtml(upload.file_name)}</div>
+                        <div class="result-upload-meta">
+                            <span class="badge badge-success">${escapeHtml(upload.result_type || '후처리 결과')}</span>
+                            <span>${formatDate(upload.upload_date)}</span>
+                            <span>${escapeHtml(upload.sheet_name || '-')}</span>
+                            <span>${formatNumber(upload.row_count || 0)}행</span>
+                        </div>
+                    </div>
+                    ${renderResultTable(upload)}
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function renderResultTable(upload) {
+    const headers = upload.headers || [];
+    const rows = upload.rows || [];
+    if (!headers.length) {
+        return '<div class="empty-state empty-state-sm"><p>표시할 데이터가 없습니다</p></div>';
+    }
+
+    return `
+        <div class="result-table-wrap">
+            <table class="preview-table result-table">
+                <thead>
+                    <tr>
+                        ${headers.map(header => `<th>${escapeHtml(header)}</th>`).join('')}
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.map(row => `
+                        <tr>
+                            ${headers.map(header => `<td>${escapeHtml(row[header])}</td>`).join('')}
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function getResultUploadInput() {
+    let input = document.getElementById('result-upload-input');
+    if (input) return input;
+
+    input = document.createElement('input');
+    input.type = 'file';
+    input.id = 'result-upload-input';
+    input.accept = '.xlsx,.xlsm,.xltx,.xltm';
+    input.multiple = true;
+    input.hidden = true;
+    input.addEventListener('change', () => {
+        const batchId = Number(input.dataset.batchId);
+        const files = Array.from(input.files || []);
+        if (batchId && files.length) uploadListingResults(batchId, files);
+    });
+    document.body.appendChild(input);
+    return input;
+}
+
+function openResultUpload(batchId) {
+    const input = getResultUploadInput();
+    input.dataset.batchId = String(batchId);
+    input.value = '';
+    input.click();
+}
+
+async function uploadListingResults(batchId, files) {
+    const invalid = files.find(file => !file.name.match(/\.(xlsx|xlsm|xltx|xltm)$/i));
+    if (invalid) {
+        toast('Excel 파일(.xlsx)만 업로드 가능합니다', 'error');
+        return;
+    }
+
+    const buttons = document.querySelectorAll(`[data-upload-batch="${batchId}"]`);
+    buttons.forEach(btn => {
+        btn.disabled = true;
+        btn.dataset.originalText = btn.textContent;
+        btn.textContent = '업로드 중';
+    });
+
+    const formData = new FormData();
+    files.forEach(file => formData.append('files', file));
+
+    try {
+        const res = await fetch(`/api/history/${batchId}/result-upload`, {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || '업로드 실패');
+
+        const rowCount = (data.uploads || []).reduce((sum, upload) => sum + Number(upload.row_count || 0), 0);
+        toast(`결과 업로드 완료: ${data.uploads.length}개 파일, ${formatNumber(rowCount)}행`, 'success');
+        await loadHistory();
+
+        const modal = document.getElementById('detail-modal');
+        if (modal && modal.style.display === 'flex' && currentDetailBatchId === batchId) {
+            await showDetail(batchId);
+        }
+    } catch (e) {
+        toast(e.message, 'error');
+    } finally {
+        buttons.forEach(btn => {
+            btn.disabled = false;
+            btn.textContent = btn.dataset.originalText || '업로드';
+        });
     }
 }
 
@@ -474,6 +627,305 @@ async function cancelListing(batchId) {
 
 function redownload(batchId) {
     window.location.href = `/api/history/${batchId}/redownload`;
+}
+
+/* ===== Result Data Editor ===== */
+let resultUploadOptions = [];
+let currentResultUpload = null;
+let currentResultRows = [];
+let isResultDirty = false;
+let visibleResultColumns = new Set();
+
+function cloneRows(rows) {
+    return (rows || []).map(row => ({ ...row }));
+}
+
+function resultUploadLabel(item) {
+    const uploadDate = formatDate(item.upload_date);
+    const batchDate = formatDate(item.batch_date);
+    const type = item.result_type || '후처리 결과';
+    return `${uploadDate} / ${batchDate} 다운로드 / ${type} / ${item.file_name}`;
+}
+
+function resultUploadMeta(item) {
+    if (!item) return '업로드된 결과 파일이 없습니다';
+
+    let suppliers = [];
+    try {
+        suppliers = JSON.parse(item.suppliers || '[]');
+    } catch (e) {
+        suppliers = [];
+    }
+
+    const supplierText = suppliers.length > 4
+        ? `${suppliers.slice(0, 4).join(', ')} 외 ${suppliers.length - 4}개`
+        : suppliers.join(', ');
+
+    return [
+        `다운로드 ${formatDate(item.batch_date)}`,
+        `업로드 ${formatDate(item.upload_date)}`,
+        item.modified_date ? `수정 ${formatDate(item.modified_date)}` : '',
+        supplierText,
+        `${formatNumber(item.row_count || 0)}행`
+    ].filter(Boolean).join(' · ');
+}
+
+async function loadResultUploadOptions() {
+    const select = document.getElementById('result-upload-select');
+    const meta = document.getElementById('result-picker-meta');
+    if (!select) return;
+
+    const selected = select.value;
+
+    try {
+        resultUploadOptions = await api('/api/result-uploads');
+        if (!resultUploadOptions.length) {
+            select.innerHTML = '<option value="">업로드 결과가 없습니다</option>';
+            if (meta) meta.textContent = '리스팅 이력에서 결과 엑셀을 먼저 업로드하세요';
+            document.getElementById('result-editor-card').style.display = 'none';
+            return;
+        }
+
+        select.innerHTML = `
+            <option value="">업로드 결과를 선택하세요</option>
+            ${resultUploadOptions.map(item => `
+                <option value="${item.id}">${escapeHtml(resultUploadLabel(item))}</option>
+            `).join('')}
+        `;
+
+        if (selected && resultUploadOptions.some(item => String(item.id) === selected)) {
+            select.value = selected;
+        }
+
+        const selectedItem = resultUploadOptions.find(item => String(item.id) === select.value);
+        if (meta) meta.textContent = resultUploadMeta(selectedItem || resultUploadOptions[0]);
+
+        if (!select.value && resultUploadOptions.length === 1) {
+            select.value = String(resultUploadOptions[0].id);
+            await loadSelectedResultUpload();
+        } else if (select.value) {
+            await loadSelectedResultUpload();
+        }
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+async function loadSelectedResultUpload() {
+    const select = document.getElementById('result-upload-select');
+    const card = document.getElementById('result-editor-card');
+    const meta = document.getElementById('result-picker-meta');
+    if (!select || !card) return;
+
+    const uploadId = select.value;
+    const selectedItem = resultUploadOptions.find(item => String(item.id) === uploadId);
+    if (meta) meta.textContent = resultUploadMeta(selectedItem);
+
+    if (!uploadId) {
+        card.style.display = 'none';
+        currentResultUpload = null;
+        currentResultRows = [];
+        setResultDirty(false);
+        return;
+    }
+
+    try {
+        currentResultUpload = await api(`/api/result-uploads/${uploadId}`);
+        currentResultRows = cloneRows(currentResultUpload.rows);
+        visibleResultColumns = new Set(currentResultUpload.headers || []);
+        renderEditableResultUpload(currentResultUpload, false);
+        card.style.display = 'block';
+    } catch (e) {
+        card.style.display = 'none';
+    }
+}
+
+function renderEditableResultUpload(upload, dirty) {
+    const table = document.getElementById('editable-result-table');
+    const title = document.getElementById('result-editor-title');
+    const subtitle = document.getElementById('result-editor-subtitle');
+    const rowCount = document.getElementById('result-row-count');
+    const colCount = document.getElementById('result-col-count');
+    if (!table || !upload) return;
+
+    const headers = upload.headers || [];
+    const rows = currentResultRows;
+    const visibleHeaders = headers
+        .map((header, index) => ({ header, index }))
+        .filter(item => visibleResultColumns.has(item.header));
+
+    title.textContent = upload.file_name || '결과 데이터';
+    subtitle.textContent = resultUploadMeta(upload);
+    rowCount.textContent = `${formatNumber(rows.length)}행`;
+    colCount.textContent = `${formatNumber(visibleHeaders.length)} / ${formatNumber(headers.length)}열`;
+    renderResultColumnPicker(headers);
+
+    if (!headers.length) {
+        table.innerHTML = '';
+        setResultDirty(false);
+        return;
+    }
+
+    table.innerHTML = `
+        <thead>
+            <tr>
+                <th class="row-number-cell">#</th>
+                ${visibleHeaders.map(item => `<th title="${escapeHtml(item.header)}">${escapeHtml(item.header)}</th>`).join('')}
+            </tr>
+        </thead>
+        <tbody>
+            ${rows.map((row, rowIndex) => `
+                <tr>
+                    <td class="row-number-cell">${rowIndex + 1}</td>
+                    ${visibleHeaders.map(item => `
+                        <td contenteditable="true"
+                            spellcheck="false"
+                            data-row="${rowIndex}"
+                            data-col="${item.index}"
+                            oninput="handleResultCellInput(this)"
+                            onpaste="handleResultCellPaste(event)">${escapeHtml(row[item.header])}</td>
+                    `).join('')}
+                </tr>
+            `).join('')}
+        </tbody>
+    `;
+
+    setResultDirty(dirty);
+}
+
+function handleResultCellInput(cell) {
+    if (!currentResultUpload) return;
+
+    const rowIndex = Number(cell.dataset.row);
+    const colIndex = Number(cell.dataset.col);
+    const header = currentResultUpload.headers[colIndex];
+    if (!header || !currentResultRows[rowIndex]) return;
+
+    currentResultRows[rowIndex][header] = cell.textContent;
+    setResultDirty(true);
+}
+
+function handleResultCellPaste(event) {
+    event.preventDefault();
+    const text = (event.clipboardData || window.clipboardData).getData('text');
+    document.execCommand('insertText', false, text);
+}
+
+function renderResultColumnPicker(headers) {
+    const list = document.getElementById('result-column-list');
+    if (!list) return;
+    const searchValue = document.querySelector('.column-search')?.value || '';
+
+    list.innerHTML = headers.map((header, index) => `
+        <label class="column-option" data-column-label="${escapeHtml(header).toLowerCase()}">
+            <input type="checkbox"
+                   ${visibleResultColumns.has(header) ? 'checked' : ''}
+                   onchange="toggleResultColumn(${index}, this.checked)">
+            <span>${escapeHtml(header)}</span>
+        </label>
+    `).join('');
+    filterResultColumnOptions(searchValue);
+}
+
+function toggleResultColumn(colIndex, checked) {
+    if (!currentResultUpload) return;
+
+    const header = currentResultUpload.headers[colIndex];
+    if (!header) return;
+
+    if (checked) {
+        visibleResultColumns.add(header);
+    } else {
+        if (visibleResultColumns.size <= 1) {
+            toast('최소 1개 칼럼은 선택해야 합니다', 'error');
+            renderResultColumnPicker(currentResultUpload.headers || []);
+            return;
+        }
+        visibleResultColumns.delete(header);
+    }
+
+    renderEditableResultUpload(currentResultUpload, isResultDirty);
+}
+
+function setAllResultColumns(visible) {
+    if (!currentResultUpload) return;
+    if (visible) {
+        visibleResultColumns = new Set(currentResultUpload.headers || []);
+    }
+    renderEditableResultUpload(currentResultUpload, isResultDirty);
+}
+
+function filterResultColumnOptions(query) {
+    const lower = String(query || '').trim().toLowerCase();
+    document.querySelectorAll('#result-column-list .column-option').forEach(option => {
+        const label = option.dataset.columnLabel || '';
+        option.style.display = !lower || label.includes(lower) ? 'flex' : 'none';
+    });
+}
+
+function setResultDirty(dirty) {
+    isResultDirty = dirty;
+    const saveBtn = document.getElementById('btn-save-result');
+    const badge = document.getElementById('result-dirty-badge');
+    if (saveBtn) saveBtn.disabled = !dirty;
+    if (badge) badge.style.display = dirty ? 'inline-flex' : 'none';
+}
+
+function restoreOriginalResultRows() {
+    if (!currentResultUpload) return;
+    if (!confirm('현재 표를 업로드 당시 원본 데이터로 되돌릴까요?')) return;
+
+    currentResultRows = cloneRows(currentResultUpload.original_rows || currentResultUpload.rows);
+    currentResultUpload.rows = cloneRows(currentResultRows);
+    renderEditableResultUpload(currentResultUpload, true);
+}
+
+async function saveCurrentResultUpload() {
+    if (!currentResultUpload) return null;
+
+    const saveBtn = document.getElementById('btn-save-result');
+    const originalText = saveBtn ? saveBtn.textContent : '';
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = '저장 중';
+    }
+
+    try {
+        const data = await api(`/api/result-uploads/${currentResultUpload.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rows: currentResultRows })
+        });
+
+        currentResultUpload = data.upload;
+        currentResultRows = cloneRows(currentResultUpload.rows);
+        setResultDirty(false);
+        toast('수정 내용이 저장되었습니다', 'success');
+        await loadResultUploadOptions();
+        return currentResultUpload;
+    } catch (e) {
+        return null;
+    } finally {
+        if (saveBtn) {
+            saveBtn.textContent = originalText || '수정 저장';
+            saveBtn.disabled = !isResultDirty;
+        }
+    }
+}
+
+function reloadCurrentResultUpload() {
+    return restoreOriginalResultRows();
+}
+
+async function downloadCurrentResultUpload() {
+    if (!currentResultUpload) return;
+
+    if (isResultDirty) {
+        const saved = await saveCurrentResultUpload();
+        if (!saved) return;
+    }
+
+    window.location.href = `/api/result-uploads/${currentResultUpload.id}/download`;
 }
 
 /* ===== Dashboard ===== */

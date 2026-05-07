@@ -2,16 +2,23 @@ import os
 import csv
 import io
 import json
+import re
 from datetime import datetime
 from flask import (Flask, render_template, request, jsonify,
                    send_file, Response)
+from openpyxl import Workbook
 from database import (init_db, upsert_products, get_suppliers,
                       get_available_products, mark_as_listed,
                       save_listing_history, save_upload_history,
                       get_listing_history, get_listing_detail,
                       cancel_listing, get_column_headers,
-                      get_products_raw_data, get_dashboard_data)
-from parser import parse_excel
+                      get_products_raw_data, get_dashboard_data,
+                      save_listing_result_upload,
+                      get_listing_result_uploads,
+                      get_all_listing_result_uploads,
+                      get_listing_result_upload,
+                      update_listing_result_upload)
+from parser import parse_excel, parse_table_excel
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
@@ -22,6 +29,34 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(EXPORT_DIR, exist_ok=True)
 
 
+def _safe_upload_filename(filename):
+    base = os.path.basename(filename or 'result.xlsx')
+    base = base.replace('\\', '_').replace('/', '_')
+    base = re.sub(r'[\x00-\x1f<>:"|?*]+', '_', base).strip(' ._')
+    return base[:180] or 'result.xlsx'
+
+
+def _infer_result_type(filename):
+    lower = (filename or '').lower()
+    if 'category' in lower or 'category_match' in lower or '카테고리' in lower:
+        return '카테고리 매칭'
+    if 'llm' in lower or 'gpt' in lower:
+        return 'LLM 결과'
+    return '후처리 결과'
+
+
+def _excel_sheet_title(title):
+    title = re.sub(r'[\[\]\:\*\?\/\\]', '_', title or 'result')
+    return title[:31] or 'result'
+
+
+def _download_filename(filename):
+    base = os.path.splitext(os.path.basename(filename or 'result.xlsx'))[0]
+    base = _safe_upload_filename(base)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    return f'{base}_수정본_{timestamp}.xlsx'
+
+
 @app.route('/')
 def index():
     return render_template('products.html', active='products')
@@ -30,6 +65,11 @@ def index():
 @app.route('/history')
 def history():
     return render_template('history.html', active='history')
+
+
+@app.route('/results')
+def results():
+    return render_template('results.html', active='results')
 
 
 @app.route('/dashboard')
@@ -200,7 +240,119 @@ def api_history_detail(batch_id):
     history, products = get_listing_detail(batch_id)
     if not history:
         return jsonify({'error': '이력을 찾을 수 없습니다'}), 404
-    return jsonify({'history': history, 'products': products})
+    result_uploads = get_listing_result_uploads(batch_id)
+    return jsonify({
+        'history': history,
+        'products': products,
+        'result_uploads': result_uploads
+    })
+
+
+@app.route('/api/history/<int:batch_id>/result-upload', methods=['POST'])
+def api_history_result_upload(batch_id):
+    history, _ = get_listing_detail(batch_id)
+    if not history:
+        return jsonify({'error': '이력을 찾을 수 없습니다'}), 404
+
+    files = request.files.getlist('files')
+    if not files and 'file' in request.files:
+        files = [request.files['file']]
+
+    files = [file for file in files if file and file.filename]
+    if not files:
+        return jsonify({'error': '파일이 없습니다'}), 400
+
+    saved_uploads = []
+    result_dir = os.path.join(UPLOAD_DIR, 'result_uploads', str(batch_id))
+    os.makedirs(result_dir, exist_ok=True)
+
+    for file in files:
+        if not file.filename.lower().endswith(('.xlsx', '.xlsm', '.xltx', '.xltm')):
+            return jsonify({'error': '후처리 결과는 Excel 파일(.xlsx)만 업로드 가능합니다'}), 400
+
+        original_name = os.path.basename(file.filename)
+        safe_name = _safe_upload_filename(original_name)
+        stored_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{safe_name}"
+        save_path = os.path.join(result_dir, stored_name)
+        file.save(save_path)
+
+        try:
+            parsed = parse_table_excel(save_path)
+        except Exception as e:
+            return jsonify({'error': f'결과 엑셀 파싱 오류: {str(e)}'}), 500
+
+        upload_id = save_listing_result_upload(
+            batch_id=batch_id,
+            file_name=original_name,
+            stored_path=save_path,
+            result_type=_infer_result_type(original_name),
+            sheet_name=parsed['sheet_name'],
+            headers=parsed['headers'],
+            rows=parsed['rows']
+        )
+        saved_uploads.append({
+            'id': upload_id,
+            'file_name': original_name,
+            'result_type': _infer_result_type(original_name),
+            'sheet_name': parsed['sheet_name'],
+            'row_count': parsed['row_count']
+        })
+
+    return jsonify({'success': True, 'uploads': saved_uploads})
+
+
+@app.route('/api/result-uploads')
+def api_result_uploads():
+    return jsonify(get_all_listing_result_uploads())
+
+
+@app.route('/api/result-uploads/<int:upload_id>')
+def api_result_upload_detail(upload_id):
+    upload = get_listing_result_upload(upload_id)
+    if not upload:
+        return jsonify({'error': '업로드 결과를 찾을 수 없습니다'}), 404
+    return jsonify(upload)
+
+
+@app.route('/api/result-uploads/<int:upload_id>', methods=['PUT'])
+def api_result_upload_update(upload_id):
+    data = request.get_json(silent=True) or {}
+    rows = data.get('rows')
+    if not isinstance(rows, list):
+        return jsonify({'error': '수정할 행 데이터가 없습니다'}), 400
+
+    updated = update_listing_result_upload(upload_id, rows)
+    if not updated:
+        return jsonify({'error': '업로드 결과를 찾을 수 없습니다'}), 404
+
+    return jsonify({'success': True, 'upload': updated})
+
+
+@app.route('/api/result-uploads/<int:upload_id>/download')
+def api_result_upload_download(upload_id):
+    upload = get_listing_result_upload(upload_id)
+    if not upload:
+        return jsonify({'error': '업로드 결과를 찾을 수 없습니다'}), 404
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = _excel_sheet_title(upload.get('sheet_name') or upload.get('result_type'))
+
+    headers = upload.get('headers') or []
+    ws.append(headers)
+    for row in upload.get('rows') or []:
+        ws.append([row.get(header, '') for header in headers])
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name=_download_filename(upload.get('file_name')),
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
 
 
 @app.route('/api/history/<int:batch_id>/cancel', methods=['POST'])

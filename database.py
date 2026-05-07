@@ -75,6 +75,12 @@ def get_db():
     return conn
 
 
+def _ensure_column(conn, table, column, declaration):
+    columns = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    if column not in [row['name'] for row in columns]:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
+
+
 def init_db():
     conn = get_db()
     conn.executescript('''
@@ -131,6 +137,25 @@ def init_db():
             skipped_count INTEGER
         );
 
+        CREATE TABLE IF NOT EXISTS listing_result_uploads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            listing_history_id INTEGER NOT NULL,
+            upload_date TEXT DEFAULT (datetime('now','localtime')),
+            file_name TEXT NOT NULL,
+            stored_path TEXT,
+            result_type TEXT,
+            sheet_name TEXT,
+            headers TEXT,
+            original_rows TEXT,
+            rows TEXT,
+            row_count INTEGER DEFAULT 0,
+            modified_date TEXT,
+            FOREIGN KEY(listing_history_id) REFERENCES listing_history(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_listing_result_uploads_batch
+            ON listing_result_uploads(listing_history_id);
+
         CREATE TABLE IF NOT EXISTS column_headers (
             id INTEGER PRIMARY KEY DEFAULT 1,
             headers TEXT
@@ -142,6 +167,8 @@ def init_db():
             naver_product_ids TEXT
         );
     ''')
+    _ensure_column(conn, 'listing_result_uploads', 'original_rows', 'TEXT')
+    _ensure_column(conn, 'listing_result_uploads', 'modified_date', 'TEXT')
     conn.commit()
     conn.close()
 
@@ -353,11 +380,142 @@ def save_upload_history(file_name, total, new, updated, skipped):
     conn.close()
 
 
+def save_listing_result_upload(batch_id, file_name, stored_path, result_type,
+                               sheet_name, headers, rows):
+    conn = get_db()
+    cursor = conn.execute('''
+        INSERT INTO listing_result_uploads
+            (listing_history_id, file_name, stored_path, result_type,
+             sheet_name, headers, original_rows, rows, row_count)
+        VALUES (?,?,?,?,?,?,?,?,?)
+    ''', (
+        batch_id,
+        file_name,
+        stored_path,
+        result_type,
+        sheet_name,
+        json.dumps(headers, ensure_ascii=False),
+        json.dumps(rows, ensure_ascii=False),
+        json.dumps(rows, ensure_ascii=False),
+        len(rows)
+    ))
+    upload_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return upload_id
+
+
+def get_listing_result_uploads(batch_id):
+    conn = get_db()
+    rows = conn.execute('''
+        SELECT *
+        FROM listing_result_uploads
+        WHERE listing_history_id=?
+        ORDER BY upload_date DESC, id DESC
+    ''', (batch_id,)).fetchall()
+    conn.close()
+
+    result = []
+    for row in rows:
+        item = dict(row)
+        item['headers'] = json.loads(item.get('headers') or '[]')
+        item['original_rows'] = json.loads(item.get('original_rows') or item.get('rows') or '[]')
+        item['rows'] = json.loads(item.get('rows') or '[]')
+        result.append(item)
+    return result
+
+
+def get_all_listing_result_uploads():
+    conn = get_db()
+    rows = conn.execute('''
+        SELECT
+            lru.id,
+            lru.listing_history_id,
+            lru.upload_date,
+            lru.modified_date,
+            lru.file_name,
+            lru.result_type,
+            lru.sheet_name,
+            lru.row_count,
+            lh.batch_date,
+            lh.suppliers,
+            lh.total_skus,
+            lh.total_rows,
+            lh.file_name AS listing_file_name,
+            lh.is_cancelled
+        FROM listing_result_uploads lru
+        JOIN listing_history lh
+            ON lh.id = lru.listing_history_id
+        ORDER BY lru.upload_date DESC, lru.id DESC
+    ''').fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def get_listing_result_upload(upload_id):
+    conn = get_db()
+    row = conn.execute('''
+        SELECT
+            lru.*,
+            lh.batch_date,
+            lh.suppliers,
+            lh.total_skus,
+            lh.total_rows,
+            lh.file_name AS listing_file_name,
+            lh.is_cancelled
+        FROM listing_result_uploads lru
+        JOIN listing_history lh
+            ON lh.id = lru.listing_history_id
+        WHERE lru.id=?
+    ''', (upload_id,)).fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    item = dict(row)
+    item['headers'] = json.loads(item.get('headers') or '[]')
+    item['rows'] = json.loads(item.get('rows') or '[]')
+    item['original_rows'] = json.loads(item.get('original_rows') or item.get('rows') or '[]')
+    return item
+
+
+def update_listing_result_upload(upload_id, rows):
+    upload = get_listing_result_upload(upload_id)
+    if not upload:
+        return None
+
+    headers = upload['headers']
+    normalized_rows = []
+    for row in rows:
+        normalized_rows.append({header: str(row.get(header, '')) for header in headers})
+
+    conn = get_db()
+    conn.execute('''
+        UPDATE listing_result_uploads
+        SET rows=?, row_count=?, modified_date=datetime('now','localtime')
+        WHERE id=?
+    ''', (
+        json.dumps(normalized_rows, ensure_ascii=False),
+        len(normalized_rows),
+        upload_id
+    ))
+    conn.commit()
+    conn.close()
+    return get_listing_result_upload(upload_id)
+
+
 def get_listing_history():
     conn = get_db()
     rows = conn.execute('''
-        SELECT * FROM listing_history
-        ORDER BY batch_date DESC
+        SELECT
+            lh.*,
+            COUNT(lru.id) AS result_upload_count
+        FROM listing_history lh
+        LEFT JOIN listing_result_uploads lru
+            ON lru.listing_history_id = lh.id
+        GROUP BY lh.id
+        ORDER BY lh.batch_date DESC
     ''').fetchall()
     conn.close()
     return [dict(r) for r in rows]

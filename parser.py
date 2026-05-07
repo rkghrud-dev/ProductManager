@@ -2,6 +2,74 @@ import re
 from openpyxl import load_workbook
 
 
+def _cell_to_text(value):
+    if value is None:
+        return ''
+    if hasattr(value, 'isoformat'):
+        return value.isoformat()
+    return str(value)
+
+
+def _dedupe_header(headers, header):
+    if header not in headers:
+        return header
+
+    idx = 2
+    while f'{header}_{idx}' in headers:
+        idx += 1
+    return f'{header}_{idx}'
+
+
+def parse_table_excel(file_path):
+    wb = load_workbook(file_path, read_only=True, data_only=True)
+
+    try:
+        for sheet_name in wb.sheetnames:
+            sheet = wb[sheet_name]
+            rows = sheet.iter_rows(values_only=True)
+            header_row = None
+
+            for row in rows:
+                if row and any(value is not None and str(value).strip() for value in row):
+                    header_row = row
+                    break
+
+            if not header_row:
+                continue
+
+            headers = []
+            for i, value in enumerate(header_row):
+                header = _cell_to_text(value).strip() or f'col_{i + 1}'
+                headers.append(_dedupe_header(headers, header))
+
+            table_rows = []
+            for row in rows:
+                if not row or not any(value is not None and str(value).strip() for value in row):
+                    continue
+
+                item = {}
+                for i, header in enumerate(headers):
+                    value = row[i] if i < len(row) else None
+                    item[header] = _cell_to_text(value)
+                table_rows.append(item)
+
+            return {
+                'sheet_name': sheet_name,
+                'headers': headers,
+                'rows': table_rows,
+                'row_count': len(table_rows)
+            }
+
+        return {
+            'sheet_name': wb.sheetnames[0] if wb.sheetnames else '',
+            'headers': [],
+            'rows': [],
+            'row_count': 0
+        }
+    finally:
+        wb.close()
+
+
 def parse_gs_code(code):
     if not code or not isinstance(code, str):
         raw = str(code).strip() if code else ''
