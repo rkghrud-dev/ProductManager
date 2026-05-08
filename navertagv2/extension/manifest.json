@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "NaverTag V2 Helper",
+  "version": "0.1.0",
+  "description": "SmartStore seller tag verification helper scaffold for NaverTag V2.",
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8787/*",
+    "https://sell.smartstore.naver.com/*",
+    "https://*.smartstore.naver.com/*",
+    "https://*.naver.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://sell.smartstore.naver.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "NaverTag V2",
+    "default_popup": "popup.html"
+  }
+}

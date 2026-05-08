@@ -5,7 +5,7 @@ echo   상품 관리 시스템 시작
 echo   서버 실행 후 브라우저를 자동으로 엽니다
 echo ============================================
 cd /d "%~dp0"
-set "NAVERTAG_DIR=%USERPROFILE%\Desktop\프롬프트\navertagv2"
+set "NAVERTAG_DIR=%~dp0navertagv2"
 
 if exist "%NAVERTAG_DIR%\server.js" (
     echo 네이버 태그 서버 시작: http://127.0.0.1:8787

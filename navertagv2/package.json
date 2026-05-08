@@ -1,0 +1,13 @@
+{
+  "name": "navertagv2",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local Naver tag keyword workspace and extension scaffold.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3"
+  }
+}

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <style>
+      body {
+        width: 280px;
+        margin: 0;
+        padding: 12px;
+        color: #121b1f;
+        background: #fbfcf7;
+        font: 13px/1.45 "Malgun Gothic", Arial, sans-serif;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 16px;
+      }
+      button {
+        width: 100%;
+        height: 34px;
+        border: 1px solid #dce2c8;
+        border-radius: 6px;
+        background: #fff;
+        cursor: pointer;
+        margin-top: 8px;
+      }
+      button.primary {
+        border-color: #f96900;
+        background: #f96900;
+        color: #fff;
+      }
+      #status {
+        min-height: 34px;
+        padding: 8px;
+        border-radius: 6px;
+        background: #dce2c8;
+        color: #121b1f;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>NaverTag V2</h1>
+    <div id="status">대기 중</div>
+    <button id="pingBtn">로컬 서버 확인</button>
+    <button id="panelBtn" class="primary">현재 탭 패널 열기</button>
+    <script src="popup.js"></script>
+  </body>
+</html>

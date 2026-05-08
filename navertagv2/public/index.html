@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>NaverTag V2</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>NaverTag V2</h1>
+          <p>커머스API 상품 조회, 상품명 기반 #검색어 재구성, 선택 업로드</p>
+        </div>
+        <nav class="tabs" aria-label="주요 메뉴">
+          <button class="tab active" data-tab="products">상품 데이터</button>
+          <button class="tab" data-tab="results">결과</button>
+          <button class="tab" data-tab="prompt">프롬프트</button>
+          <button class="tab" data-tab="keys">키 설정</button>
+        </nav>
+      </header>
+
+      <main class="workspace">
+        <section id="tab-products" class="tab-panel active">
+          <div class="panel">
+            <div class="panel-head">
+              <h2>상품 데이터</h2>
+              <div class="toolbar compact">
+                <button id="loadCommerceBtn" class="primary-btn">커머스API 상품 불러오기</button>
+                <button id="sampleBtn">샘플</button>
+                <button id="manualImportBtn">붙여넣기 반영</button>
+              </div>
+            </div>
+
+            <div class="control-grid">
+              <label>상태
+                <select id="statusFilterLoad" multiple size="3">
+                  <option value="SALE" selected>SALE 판매중</option>
+                  <option value="SUSPENSION">SUSPENSION 판매중지</option>
+                  <option value="WAIT">WAIT 대기</option>
+                </select>
+              </label>
+              <label>최대 페이지
+                <input id="maxPagesInput" type="number" min="1" max="200" value="20">
+              </label>
+              <label>페이지 크기
+                <input id="apiPageSizeInput" type="number" min="1" max="500" value="500">
+              </label>
+              <label class="check inline-check"><input id="regenerateCheck" type="checkbox"> 키워드 재생성</label>
+              <label class="check inline-check"><input id="searchAdCheck" type="checkbox"> 검색광고 API 사용</label>
+              <label class="check inline-check"><input id="useLLMCheck" type="checkbox"> AI 프롬프트 사용</label>
+              <label class="check inline-check"><input id="categoryChangeCheck" type="checkbox" checked> 카테고리 후보 생성</label>
+            </div>
+
+            <details class="manual-box">
+              <summary>CSV/상품명 직접 붙여넣기</summary>
+              <textarea id="productInput" spellcheck="false" placeholder="CSV/TSV 또는 상품명을 줄마다 붙여넣기&#10;권장 헤더: 상품번호,상품명,카테고리,속성,기존태그"></textarea>
+            </details>
+
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <h2>상품 목록</h2>
+              <div class="toolbar compact">
+                <button id="generateSelectedBtn" class="primary-btn">선택 키워드 생성</button>
+                <button id="generateFilteredBtn">현재 필터 전체 생성</button>
+              </div>
+            </div>
+
+            <div class="filter-bar">
+              <label>상품명 검색 <input id="productSearchInput" placeholder="상품명/SKU/카테고리"></label>
+              <label>상태
+                <select id="statusViewFilter">
+                  <option value="">전체</option>
+                  <option value="SALE">SALE</option>
+                  <option value="SUSPENSION">SUSPENSION</option>
+                  <option value="WAIT">WAIT</option>
+                </select>
+              </label>
+              <label>작업 상태
+                <select id="workStatusFilter">
+                  <option value="">전체</option>
+                  <option value="commerce">네이버 등록상품</option>
+                  <option value="manual">수기 입력상품</option>
+                  <option value="updated">키워드 수정완료</option>
+                  <option value="unmodified">미수정</option>
+                </select>
+              </label>
+              <label>시작일 <input id="dateFromInput" type="date"></label>
+              <label>종료일 <input id="dateToInput" type="date"></label>
+              <label>보기
+                <select id="pageSizeSelect">
+                  <option>10</option>
+                  <option selected>20</option>
+                  <option>50</option>
+                  <option>100</option>
+                </select>
+              </label>
+            </div>
+
+            <div id="productSummary" class="summary">상품을 불러오세요.</div>
+            <div id="categorySource" class="muted category-source"></div>
+            <div class="table-wrap product-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th class="select-col"><input id="selectPageCheck" type="checkbox"></th>
+                    <th>상품명</th>
+                    <th>카테고리</th>
+                    <th>기존 #검색어</th>
+                    <th>상태</th>
+                    <th>수정일</th>
+                  </tr>
+                </thead>
+                <tbody id="productBody"></tbody>
+              </table>
+            </div>
+            <div class="pager">
+              <button id="prevPageBtn">이전</button>
+              <div id="pageNumbers" class="page-numbers"></div>
+              <span id="pageInfo">1 / 1</span>
+              <button id="nextPageBtn">다음</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-results" class="tab-panel">
+          <div class="panel result-panel">
+            <div class="panel-head">
+              <h2>키워드 결과</h2>
+              <div class="toolbar compact">
+                <button id="exportCsvBtn">CSV 저장</button>
+                <button id="exportQueueBtn">확장 검증 큐 저장</button>
+                <button id="dryRunBtn">업로드 점검</button>
+                <label class="check"><input id="uploadCategoryCheck" type="checkbox" checked> 카테고리도 업로드</label>
+                <button id="uploadSelectedBtn" class="danger-btn">선택 실제 업로드</button>
+              </div>
+            </div>
+            <div id="summary" class="summary">아직 생성된 결과가 없습니다.</div>
+            <div id="progressBox" class="progress-box" hidden>
+              <div class="progress-top">
+                <strong id="progressText">대기</strong>
+                <span id="progressCount" class="muted"></span>
+              </div>
+              <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+            </div>
+            <div class="table-wrap result-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th class="select-col"><input id="selectResultCheck" type="checkbox"></th>
+                    <th>상품</th>
+                    <th>키워드 후보 20</th>
+                    <th>#검색어 10</th>
+                    <th>추천 카테고리</th>
+                    <th>상태</th>
+                    <th>작업</th>
+                  </tr>
+                </thead>
+                <tbody id="resultBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-prompt" class="tab-panel">
+          <div class="panel prompt-panel">
+            <div class="panel-head">
+              <h2>키워드 프롬프트</h2>
+              <button id="savePromptBtn" class="primary-btn">프롬프트 저장</button>
+            </div>
+            <div class="prompt-controls">
+              <label>제공자
+                <select id="llmProviderSelect">
+                  <option value="openai">OpenAI</option>
+                  <option value="anthropic">Anthropic</option>
+                </select>
+              </label>
+              <label>모델
+                <input id="llmModelInput" placeholder="비워두면 키 설정 기본값 사용">
+              </label>
+              <label>Temperature
+                <input id="llmTemperatureInput" type="number" min="0" max="1" step="0.1" value="0.2">
+              </label>
+            </div>
+            <textarea id="promptTemplateInput" class="prompt-textarea" spellcheck="false"></textarea>
+            <p class="hint">사용 가능 변수: <code>{상품명}</code> <code>{카테고리}</code> <code>{카테고리후보}</code> <code>{기존태그}</code> <code>{속성}</code> <code>{옵션}</code> <code>{상품번호}</code></p>
+          </div>
+        </section>
+
+        <section id="tab-keys" class="tab-panel">
+          <div class="panel key-panel">
+            <div class="panel-head">
+              <h2>키 설정</h2>
+              <div class="toolbar compact">
+                <button id="refreshKeysBtn">새로고침</button>
+                <button id="saveKeysBtn" class="primary-btn">API 키 저장</button>
+              </div>
+            </div>
+            <div id="keyFile" class="muted key-file"></div>
+            <div id="keyStatus" class="status-grid"></div>
+            <div class="key-form">
+              <label>커머스 client_id <input id="commerceClientId" autocomplete="off"></label>
+              <label>커머스 client_secret <input id="commerceClientSecret" type="password" autocomplete="off"></label>
+              <label>검색광고 API KEY <input id="searchAdApiKey" autocomplete="off"></label>
+              <label>검색광고 SECRET KEY <input id="searchAdSecretKey" type="password" autocomplete="off"></label>
+              <label>검색광고 CUSTOMER ID <input id="searchAdCustomerId" autocomplete="off"></label>
+              <label>데이터랩 Client ID <input id="datalabClientId" autocomplete="off"></label>
+              <label>데이터랩 Client Secret <input id="datalabClientSecret" type="password" autocomplete="off"></label>
+              <label>OpenAI API Key <input id="openaiApiKey" type="password" autocomplete="off"></label>
+              <label>Anthropic API Key <input id="anthropicApiKey" type="password" autocomplete="off"></label>
+              <label>OpenAI 기본 모델 <input id="openaiModel" autocomplete="off" placeholder="gpt-4o-mini"></label>
+              <label>Anthropic 기본 모델 <input id="anthropicModel" autocomplete="off" placeholder="claude-3-5-haiku-latest"></label>
+            </div>
+            <p class="hint">저장 위치: 바탕화면 <code>key\navertagv2.keys.json</code>. 빈 입력값은 기존 저장값을 덮어쓰지 않습니다.</p>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast" hidden></div>
+    <script src="/app.js"></script>
+  </body>
+</html>
